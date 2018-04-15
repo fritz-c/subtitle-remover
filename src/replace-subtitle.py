@@ -3,14 +3,15 @@ import cv2 as cv
 import imutils
 
 detectionThreshold = 0.1
-subtitleAreaMinY = 6.0/8.0
-subtitleAreaMaxY = 8.0/8.0
+subtitleAreaMinY = 560.0/720.0
+subtitleAreaMaxY = 700.0/720.0
+screenAllBlackThreshold = 35.0
 
 cv.namedWindow('image', cv.WINDOW_NORMAL)
 mult = 1
 cv.resizeWindow('image', 600*mult, 480*mult)
 
-def draw(frame):
+def draw(frame, out):
   frameHeight, frameWidth, _ = frame.shape
   resized = imutils.resize(frame, width=500)
   ratio = frame.shape[0] / float(resized.shape[0])
@@ -41,7 +42,16 @@ def draw(frame):
       c = c.astype("int")
       subtitleContours.append(c)
 
-  if len(subtitleContours) > 0:
+  averageColor = blurred[:, :].mean()
+
+  if averageColor < screenAllBlackThreshold:
+    mask = np.zeros((frameHeight,frameWidth), np.uint8)
+
+    # White out the bottom part of the screen
+    mask[int(subtitleAreaMinY * frameHeight):int(subtitleAreaMaxY * frameHeight),:] = 255
+
+    frame = cv.inpaint(frame, mask, 3, cv.INPAINT_TELEA)
+  elif len(subtitleContours) > 0:
     c = subtitleContours[0]
     contours = np.array(c)
     mask = np.zeros((frameHeight,frameWidth), np.uint8)
@@ -49,6 +59,7 @@ def draw(frame):
 
     # Black out the top part of the screen in the mask
     mask[0:int(subtitleAreaMinY * frameHeight),:] = 0
+    mask[int(subtitleAreaMaxY * frameHeight):frameHeight,:] = 0
 
     # Grow the mask to ensure the black of the subtitle is covered by the mask
     # https://docs.opencv.org/3.4.1/d9/d61/tutorial_py_morphological_ops.html
@@ -58,31 +69,34 @@ def draw(frame):
     # https://docs.opencv.org/3.4.1/df/d3d/tutorial_py_inpainting.html
     frame = cv.inpaint(frame, mask, 3, cv.INPAINT_TELEA)
 
-    cv.imshow('image', frame)
-  else:
-    cv.imshow('image',frame)
-
+  cv.imshow('image',frame)
+  out.write(frame)
 
 
 cap = cv.VideoCapture('../shared/video.mp4')
-# cap = cv.VideoCapture('../shared/short.mp4')
+# cap = cv.VideoCapture('../shared/fade.mp4')
 
-# def fillContours(cnts):
-#   contours = np.array(cnts)
-#   img = np.zeros( (frameWidth,frameHeight) )
-#   cv.fillPoly(img, pts =[contours], color=(255,255,255))
-#   cv.imshow('image', img)
+# Use the same codec as the input video
+fourcc = int(cap.get(cv.CAP_PROP_FOURCC))
+width = int(cap.get(cv.CAP_PROP_FRAME_WIDTH));
+height = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT));
+fps = float(cap.get(cv.CAP_PROP_FPS));
 
+out = cv.VideoWriter('../shared/real-output.mp4', fourcc, fps, (width, height))
 
+# skipSeconds = 15
+# for x in range(1,int(skipSeconds*fps)):
+#   cap.grab()
 
 while(cap.isOpened()):
   ret, frame = cap.read()
   if ret==True:
-    draw(frame)
+    draw(frame, out)
   else:
     break
   if cv.waitKey(1) & 0xFF == ord('q'):
     break
 
 cap.release()
+out.release()
 cv.destroyAllWindows()
