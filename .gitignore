@@ -1,2 +1,6 @@
 shared/*
 !shared/.gitkeep
+*.jpg
+*.png
+*.mp4
+*.avi
